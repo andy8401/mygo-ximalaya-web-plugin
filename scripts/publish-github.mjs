@@ -37,11 +37,19 @@ async function api(path, options = {}) {
   return { status: response.status, body };
 }
 
+// This host's HTTP proxy rejects CONNECT to github.com (502) while direct
+// access works. Git inherits the proxy variables, so drop them for git only.
+// Set GITHUB_USE_PROXY=1 to force the proxy path instead.
+const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+if (process.env.GITHUB_USE_PROXY !== "1") {
+  for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]) delete gitEnv[key];
+}
+
 function git(args, allowFailure = false) {
   const result = spawnSync("git", args, {
     cwd: ROOT,
     encoding: "utf8",
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    env: gitEnv,
   });
   if (result.status !== 0 && !allowFailure) {
     throw new Error(`git ${args[0]} failed: ${redact(result.stderr || result.stdout)}`);
@@ -86,10 +94,10 @@ git(["config", "branch.main.merge", "refs/heads/main"]);
 
 // Token appears only in this one child process argument, never in .git/config.
 const pushURL = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
-const push = spawnSync("git", ["push", pushURL, "HEAD:refs/heads/main"], {
+const push = spawnSync("git", ["-c", "http.proxy=", "-c", "https.proxy=", "push", pushURL, "HEAD:refs/heads/main"], {
   cwd: ROOT,
   encoding: "utf8",
-  env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  env: gitEnv,
 });
 if (push.status !== 0) throw new Error(`git push failed: ${redact(push.stderr || push.stdout)}`);
 console.log(redact(push.stderr || push.stdout).trim());
